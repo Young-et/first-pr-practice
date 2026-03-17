@@ -1,0 +1,44 @@
+# 对每个 PR 自动运行：只允许修改 Contributors.md 且只新增一行符合格式的贡献者
+name: Validate PR
+
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Fetch base branch
+        run: git fetch origin ${{ github.event.pull_request.base.ref }}
+
+      - name: Check only Contributors.md changed
+        run: |
+          BASE="origin/${{ github.event.pull_request.base.ref }}"
+          FILES=$(git diff --name-only "$BASE"...HEAD)
+          if [ "$(echo "$FILES" | wc -l)" -ne 1 ] || [ "$FILES" != "Contributors.md" ]; then
+            echo "::error::Only Contributors.md may be changed. Got: $FILES"
+            exit 1
+          fi
+
+      - name: Check exactly one line added with valid format
+        run: |
+          BASE="origin/${{ github.event.pull_request.base.ref }}"
+          DIFF=$(git diff "$BASE"...HEAD -- Contributors.md)
+          ADDED=$(echo "$DIFF" | grep '^+' | grep -v '^+++' || true)
+          ADDED_LINES=$(echo "$ADDED" | wc -l)
+          if [ "$ADDED_LINES" -ne 1 ]; then
+            echo "::error::Must add exactly one line. Added lines: $ADDED_LINES"
+            exit 1
+          fi
+          LINE=$(echo "$ADDED" | sed 's/^+//')
+          # 格式: - [username](https://github.com/username)  用户名只允许 字母数字-
+          if ! echo "$LINE" | grep -qE '^- \[[a-zA-Z0-9_-]+\]\(https://github\.com/[a-zA-Z0-9_-]+\)\s*$'; then
+            echo "::error::Line must match: - [username](https://github.com/username). Got: $LINE"
+            exit 1
+          fi
+          echo "Valid contribution line: $LINE"
